@@ -1,0 +1,139 @@
+name: Build Melt marble + SukiSU Ultra + SUSFS + DroidSpaces
+
+on:
+  workflow_dispatch:
+    inputs:
+      enable_sukisu:
+        description: 'SukiSU Ultra root ON/OFF'
+        type: boolean
+        default: true
+      enable_susfs:
+        description: 'SUSFS ON/OFF (needs SukiSU)'
+        type: boolean
+        default: true
+      sukisu_ref:
+        description: 'SukiSU-Ultra branch/tag/commit'
+        type: string
+        default: 'susfs_new'
+      susfs_commit:
+        description: 'susfs4ksu commit (empty = branch tip)'
+        type: string
+        default: 'f3b5aecf53ff8b3296603071b91383f6be6c7cbb'
+      droidspace_mode:
+        description: 'DroidSpaces config scope'
+        type: choice
+        options: [full, gki-safe, off]
+        default: 'full'
+      enable_kpm:
+        description: 'Enable SukiSU KPM'
+        type: boolean
+        default: false
+      lto:
+        description: 'Clang LTO mode'
+        type: choice
+        options: [thin, none]
+        default: 'thin'
+      build_modules:
+        description: 'Also build vendor .ko modules'
+        type: boolean
+        default: false
+      create_release:
+        description: 'Create draft GitHub release with ZIP'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  ARCH: arm64
+  SUKISU_REPO: https://github.com/SukiSU-Ultra/SukiSU-Ultra.git
+  SUSFS_REPO: https://gitlab.com/simonpunk/susfs4ksu.git
+  SUSFS_KERNEL_BRANCH: gki-android12-5.10
+  # Era-correct AOSP clang for android12-5.10 (same as reference marble CI)
+  ANDROID_CLANG_COMMIT: 6e3223f76384455acde43affde3df0ea9df66c0d
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    steps:
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison flex libssl-dev libelf-dev rsync ccache \
+            curl zip python3 git file lld llvm
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: melt-marble-ccache-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: melt-marble-ccache-${{ github.ref_name }}-
+
+      - name: Fetch AOSP clang r416183b (pinned)
+        run: |
+          if [ ! -x clang-bin/bin/clang ]; then
+            git init clang-src
+            git -C clang-src remote add origin https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
+            git -C clang-src fetch --depth 1 origin "${ANDROID_CLANG_COMMIT}"
+            git -C clang-src checkout FETCH_HEAD
+            ln -sfn "$PWD/clang-src/clang-r416183b" "$PWD/clang-bin"
+          fi
+          "$PWD/clang-bin/bin/clang" --version
+          echo "$PWD/clang-bin/bin" >> "$GITHUB_PATH"
+
+      - name: Add SukiSU Ultra driver
+        if: inputs.enable_sukisu
+        run: bash scripts/ci/apply-sukisu.sh
+        env:
+          KERNEL_DIR: ${{ github.workspace }}
+          SUKISU_REF: ${{ inputs.sukisu_ref }}
+
+      - name: Apply SUSFS kernel patches
+        if: inputs.enable_susfs
+        run: bash scripts/ci/apply-susfs.sh
+        env:
+          KERNEL_DIR: ${{ github.workspace }}
+          SUSFS_COMMIT: ${{ inputs.susfs_commit }}
+
+      - name: Build kernel
+        run: bash scripts/ci/build-marble.sh
+        env:
+          KERNEL_DIR: ${{ github.workspace }}
+          DROIDSPACE_MODE: ${{ inputs.droidspace_mode }}
+          ENABLE_SUKISU: ${{ inputs.enable_sukisu }}
+          ENABLE_SUSFS: ${{ inputs.enable_susfs }}
+          ENABLE_KPM: ${{ inputs.enable_kpm }}
+          LTO: ${{ inputs.lto }}
+          BUILD_MODULES: ${{ inputs.build_modules }}
+          CCACHE_DIR: ${{ github.workspace }}/.ccache-tmp
+
+      - name: Package AnyKernel3
+        run: bash scripts/ci/package-anykernel.sh
+        env:
+          KERNEL_DIR: ${{ github.workspace }}
+          ZIP_BASENAME: Melt-SukiSU-marble-${{ inputs.droidspace_mode }}-${{ inputs.enable_susfs && 'susfs' || 'nosusfs' }}-${{ inputs.enable_sukisu && 'sukisu' || 'stock' }}-${{ github.run_number }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: melt-marble-${{ github.run_number }}
+          path: |
+            release/*.zip
+            release/build.log
+            release/System.map
+
+      - name: Draft release
+        if: inputs.create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          tag_name: melt-sukisu-marble-${{ github.run_number }}
+          files: release/*.zip
