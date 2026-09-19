@@ -56,4 +56,31 @@ if ! grep -q '^config KSU_SUSFS$' SukiSU-Ultra/kernel/Kconfig; then
 fi
 echo "[+] Manager-side SUSFS present in SukiSU driver"
 
+# Compat shim: simonpunk's kernel patch (fs/exec.c) calls
+# ksu_handle_post_execveat_sucompat(), which only exists in official
+# KernelSU/KSU-Next. SukiSU completes the su session synchronously in its
+# pre-hook (ksud redirect + escape_with_root_profile), so the post hook is
+# a no-op here. Without this stub the link fails with:
+#   ld.lld: error: undefined symbol: ksu_handle_post_execveat_sucompat
+sucompat_c="SukiSU-Ultra/kernel/feature/sucompat.c"
+if ! grep -q 'ksu_handle_post_execveat_sucompat' "${sucompat_c}"; then
+  cat >> "${sucompat_c}" <<'EOF'
+
+#ifdef CONFIG_KSU_SUSFS
+/* SukiSU compat for simonpunk susfs kernel patch (fs/exec.c): no post-execve
+ * work needed, the su session is already established in the pre-hook.
+ */
+int ksu_handle_post_execveat_sucompat(int *fd, struct filename **filename_ptr,
+			void *argv_user, void *envp_user,
+			int *__never_use_flags, int *retval)
+{
+	return 0;
+}
+#endif
+EOF
+  echo "[+] Added ksu_handle_post_execveat_sucompat compat stub to SukiSU driver"
+else
+  echo "[+] SukiSU driver already provides ksu_handle_post_execveat_sucompat"
+fi
+
 echo "[+] SUSFS kernel patches applied"
