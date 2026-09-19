@@ -7,6 +7,12 @@ KERNEL_DIR="${KERNEL_DIR:-.}"
 SUSFS_REPO="${SUSFS_REPO:-https://gitlab.com/simonpunk/susfs4ksu.git}"
 SUSFS_KERNEL_BRANCH="${SUSFS_KERNEL_BRANCH:-gki-android12-5.10}"
 SUSFS_COMMIT="${SUSFS_COMMIT:-f3b5aecf53ff8b3296603071b91383f6be6c7cbb}"
+ENABLE_SUKISU="${ENABLE_SUKISU:-true}"
+
+if [[ "${ENABLE_SUKISU}" != "true" ]]; then
+  echo "::error::SUSFS needs the SukiSU driver (enable_sukisu=true)"
+  exit 1
+fi
 
 cd "${KERNEL_DIR}"
 rm -rf susfs4ksu
@@ -41,5 +47,13 @@ fi
 echo "[+] Syncing susfs fs/ + include/ overlays"
 rsync -a susfs4ksu/kernel_patches/fs/ fs/
 rsync -a susfs4ksu/kernel_patches/include/ include/
+
+# Manager-side SUSFS must come from the SukiSU driver (builtin branch).
+# Fail early with a clear message instead of a broken build later.
+if ! grep -q '^config KSU_SUSFS$' SukiSU-Ultra/kernel/Kconfig; then
+  echo "::error::SukiSU ref lacks manager-side SUSFS (no 'config KSU_SUSFS' in SukiSU-Ultra/kernel/Kconfig). Use the 'builtin' branch."
+  exit 1
+fi
+echo "[+] Manager-side SUSFS present in SukiSU driver"
 
 echo "[+] SUSFS kernel patches applied"

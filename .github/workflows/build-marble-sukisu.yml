@@ -12,9 +12,9 @@ on:
         type: boolean
         default: true
       sukisu_ref:
-        description: 'SukiSU-Ultra branch/tag/commit'
+        description: 'SukiSU-Ultra branch/tag/commit (builtin = with SUSFS driver)'
         type: string
-        default: 'susfs_new'
+        default: 'builtin'
       susfs_commit:
         description: 'susfs4ksu commit (empty = branch tip)'
         type: string
@@ -102,6 +102,7 @@ jobs:
         env:
           KERNEL_DIR: ${{ github.workspace }}
           SUSFS_COMMIT: ${{ inputs.susfs_commit }}
+          ENABLE_SUKISU: ${{ inputs.enable_sukisu }}
 
       - name: Build kernel
         run: bash scripts/ci/build-marble.sh

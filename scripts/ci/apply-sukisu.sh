@@ -5,7 +5,7 @@ set -euo pipefail
 
 KERNEL_DIR="${KERNEL_DIR:-.}"
 SUKISU_REPO="${SUKISU_REPO:-https://github.com/SukiSU-Ultra/SukiSU-Ultra.git}"
-SUKISU_REF="${SUKISU_REF:-susfs_new}"
+SUKISU_REF="${SUKISU_REF:-builtin}"
 
 cd "${KERNEL_DIR}"
 
@@ -40,4 +40,4 @@ grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig \
 
 echo "[+] SukiSU driver wired (drivers/kernelsu -> SukiSU-Ultra/kernel)"
 grep -c "susfs" -ri SukiSU-Ultra/kernel --include="*.c" --include="*.h" --include="Kconfig" --include="Kbuild" --include="Makefile" 2>/dev/null \
-  | awk -F: '{s+=$NF} END {print "[+] susfs references inside SukiSU driver: " (s+0)}'
+  | awk -F: '{s+=$NF} END {print "[+] susfs references inside SukiSU driver: " (s+0)}' || true
